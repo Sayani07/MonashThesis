@@ -3,25 +3,333 @@ chapter: 2
 knit: "bookdown::render_book"
 ---
 
-# Literature Review {#ch:litreview}
-
-This chapter contains a summary of the context in which your research is set. 
-
-Imagine you are writing for your fellow PhD students. Topics that are well-known to them do not have to be included here. But things that they may not know about should be included.
-
-Resist the temptation to discuss everything you've read in the last few years. And you are not writing a textbook either. This chapter is meant to provide the background necessary to understand the material in subsequent chapters. Stick to that.
-
-You will need to organize the literature review around themes, and within each theme provide a story explaining the development of ideas to date. In each theme, you should get to the point where your ideas will fit in. But leave your ideas to later chapters. This way it is clear what has been done beforehand, and what new contributions you are making to the research field.
-
-All citations should be done using markdown notation as shown below. This way, your bibliography will be compiled automatically and correctly.
+# Visualization of probability distribution of deconstructed temporal data {#ch:litreview}
 
 
-## Exponential Smoothing {#sec:expsmooth}
+## Time granularities
 
-Exponential smoothing was originally developed in the late 1950s [@Brown59;@Brown63;@Holt57;@Winters60]. Because of their computational simplicity and interpretability, they became widely used in practice.
+Breaking time into years, months, weeks, days and so on in a hierarchical manner is a common way to relate data to time. Such  dicrete human made abstractions of time can be thought of as time granularities. It is interesting to look at different time granularities and trying to figure out the exhaustive number of ways in which we can visualize sub-daily data. 
 
-Empirical studies by @MH79 and @Metal82 found little difference in forecast accuracy between exponential smoothing and ARIMA models. This made the family of exponential smoothing procedures an attractive proposition [see @CKOS01].
+The number of time granularities increases as the frequency of data increases. And with increasing frequency, it is difficult to comprehend how all those time granularities relate to data.
 
-The methods were less popular in academic circles until  @OKS97 introduced a state space formulation of some of the methods, which was extended in @HKSG02 to cover the full range of exponential smoothing methods.
+## Exhaustive number of time granularities for a fixed bottom granularity
+
+If the bottom granularity is 30 minutes, the following set of time graularities can be defined.
+ 
+Month of the Year: 1  
+Week of the Month/Year: 2  
+Day of the Week/ Month/Year:  3  
+Hour of the Day/Week/Month/Year: 4  
+30-mins of the Hour/Day/Week/Month/Year: 5  
+
+Exhaustive number of time granularities =  (1+2+3+4+5) = (5*6)/2 = 15
+
+If the order of primary time granularities are:
+
+1. Year
+2. Month
+3. Week
+4. Day
+5. Hour
+6. HalfHour
+7. QuarterHour 
+and so on, then the exhaustive number of time granularities will be (i-1)* i/2 where i is the position of the bottom most granularity in the order sequence.
+
+It is to be noted that the parent and bottom granularity can start and end at any level, for example, start at month and go till seconds. But if they can be arranged in an order like this, the total number of time granularities can be computed.
+
+## So what works and what doesn't?
+
+Does that mean we can plot all the 16c2 combinations if we want to draw two granularities or 16c3 combinations if we want to draw all the three granularities in a graph.
+
+Or, there will be some combinations which will misguide us for comparison or should not be plotted together?
+
+
+### Example - 1
+
+**State level electricity demand of Victoria from 2002 to 2014**
+
+```{r nosense_eg1, echo=FALSE}
+library(tidyverse)
+library(lubridate)
+library(tsibble)
+library(data.tree)
+VIC <- read.csv("VIC2015/Data/demand_VIC.csv")
+VIC$Date <- as.Date(VIC$Date,origin = "1899-12-30")
+range(VIC$Date)
+
+# Week starts from Monday
+VIC <- VIC %>%
+  mutate(month = month(Date, label = FALSE, abbr = TRUE), 
+         year =  year(Date),
+         yday =yday(Date),
+         wday = wday(Date, label=FALSE, abbr=TRUE,
+                     week_start=1), 
+         bow = (wday - 1) * 48 + Period,
+         dom = day(Date),
+         bom = (dom - 1) * 48 + Period)
+
+VIC %>% ggplot(aes(x=as.factor(bow),y=OperationalLessIndustrial)) + geom_jitter() + scale_x_discrete(breaks=seq(1, 366, 60)) + facet_wrap(~Period)+ theme(legend.position = "bottom") + theme(legend.position = "bottom",strip.text = element_text(size = 8, margin = margin())) + xlab("Half-Hour of the Week") + ylab("Energy_Consumption(Kwh)")
+```
+
+When we are drawing half-hour of the week and half-hour of the day, for example, first half-hour of the day can never correspond to second half-hour of the week or vice versa. Hence, they should not be put in the same graph for the purpose of comparison as the points in each facet would correspond to different half-hour of the week and can't be compared across facets.
+
+
+
+### Example - 2
+
+**State level electricity demand of Victoria for 2014**
+
+Again, consider plotting half hours of the week and facetting it by days of the month.
+
+```{r nosense_eg3, echo=FALSE}
+
+VIC%>% filter(year==2014) %>%  ggplot(aes(x=bow, y=OperationalLessIndustrial)) + facet_wrap(~dom)+ geom_line() + scale_x_continuous(breaks=seq(1,336,20)) +theme(legend.position = "bottom",strip.text = element_text(size = 8, margin = margin())) + xlab("Half-Hour of the Week") + ylab("Energy_Consumption(Kwh)")
+```
+
+The plot shows that the first day of the month is mostly Wednesday or Saturday and the second day of the month has been mostly Sunday for the year 2014. So there are more observations corresponding to those two days if we consider first day of the month. However, if we create any statistic or try to plot a boxplot in this kind of a scanario, the plots will be misleading as there are uneven observations for each level of the half hours of the week.
+
+These scenarios might be misleading to a naive data analyst if not weighted by the number of observations.A confidence band should be used to differentiate more certainty for few levels over others.
+
+### Example - 3
+
+When a plot performs a statistical transformation of a variable, we need to be cautious of the sample size used to calculate the transformation. If we are trying to look at deciles for understanding the probability distribution of the variable, definitely there should be more than 20 observations for each level.
+
+```{r datatree1, echo=FALSE}
+# Data_Halls_Residence <-read_rds("DHResidence.rds")
+# 
+# 
+# selected_units <- Data_Halls_Residence %>% filter(Source %in% c("B1 05","B2 15","B3 37", "B4 29", "BG 50"))
+# 
+# # Making sure that the timestamp is a R date-time object
+# 
+# selected_units$`Timestamp UTC` <- ymd_hms(selected_units$`Timestamp UTC`)
+# 
+# 
+# # Making it an tsibble object to see if the time gap is regular and to make implicit NAs as explicit
+# 
+# selected_units_tsibble <- as_tsibble(selected_units,key=id(Source),index=`Timestamp UTC`,tz="UTC")
+# 
+# Units_Data <-selected_units_tsibble %>% fill_na(, .full = TRUE)
+
+load("Units_Data.Rdata")
+first_day_of_month_wday <- function(dx) {
+  day(dx) <- 1
+  wday(dx)
+}
+
+# Primary Time Granularities and exhaustive time granularities set in exhaust_index
+
+Index_Set <- c("year","month","week","day","hour","hh")
+
+nC2_results <- combn(Index_Set,2)
+
+
+exhaust_index =  array(0,ncol(nC2_results))
+for(i in 1:ncol(nC2_results))
+{ 
+  index1 = nC2_results[1,i]
+  index2 = nC2_results[2,i]
+  exhaust_index[i] = paste0(index1,sep = "_",index2)
+}  
+
+
+# Making time indices
+
+### renaming variables
+#make the column which contains date as a variable too
+    Data_wt_index <- function(data, index1,index2) #choose index1 and index2 from exhaust_index
+    {
+    Units_Data_m <- data %>%
+    mutate(
+      #Primary time units
+      month = month(`Timestamp UTC`, label = FALSE, abbr = TRUE), 
+      year_month = month(`Timestamp UTC`, label = FALSE, abbr = TRUE),
+      year =  year(`Timestamp UTC`),
+      min_proxy  = minute(`Timestamp UTC`)/15,
+      week = week(`Timestamp UTC`),
+      hour =  hour(`Timestamp UTC`),
+      Hlfhour = (hour)*2 + if_else(min_proxy %in% c(0,1),1,2),
+      day = day(`Timestamp UTC`),
+      
+      
+      # Week of the month and week of the year
+  
+      
+      # This adjustment needs to be done in order to get the correct week number otherwise if you have the 7th day of month on a Monday you will get 1 instead of 2, for example.
+      
+      month_week = ceiling((day(`Timestamp UTC`) + first_day_of_month_wday(`Timestamp UTC`) - 1) / 7),
+      year_week = week(`Timestamp UTC`),
+      
+      # day of the week, day of the month and day of the year
+      
+      week_day = wday(`Timestamp UTC`, label=FALSE, abbr=TRUE,
+                 week_start=1), 
+      month_day = day(`Timestamp UTC`),
+      year_day = yday(`Timestamp UTC`),
+      
+      # Hour of the day, week, month and year
+      
+      week_hour = (week_day - 1) * 24 + hour, 
+      month_hour = (month_day - 1) * 24 + hour,
+      year_hour = (year_day - 1) * 24 + hour,
+      day_hour =  hour,
+      
+      # Half-Hour of the day, week, month and year
+      
+      week_hh = (week_day - 1) * 48 + Hlfhour, 
+      month_hh = (month_day - 1) * 48 + Hlfhour,
+      year_hh = (year_day - 1) * 48 + Hlfhour,
+      day_hh =  Hlfhour,
+      hour_hh = if_else(week_day %in% c(0,1),1,2),
+      Weekend=if_else(min_proxy %in% c(6,7),1,0))
+    
+     d <- Units_Data_m %>% group_by(.data[[index1]]) %>% mutate(count_d = length(unique(.data[[index2]])))
+     e <-ifelse(identical(max(d$count_d) ,min(d$count_d)),"Regular","Irregular")
+    return(e)
+    
+    }
+
+nC2_exhaust_in <- combn(exhaust_index ,2)
+
+    
+    
+data_tree_mat =matrix(0,ncol(nC2_exhaust_in),3)
+
+for(i in 1:ncol(nC2_exhaust_in))
+{ 
+  index1 = nC2_exhaust_in[1,i]
+  index2 = nC2_exhaust_in[2,i]
+  r_index = Data_wt_index(Units_Data,index1,index2)
+  #data_tree_row <- 
+  data_tree_mat[i,] =  c(index1,index2,r_index)
+}
+
+data_tree_frame <- as.data.frame(data_tree_mat)
+
+
+data_tree_frame$pathString <- paste("Time_Granularities", 
+                                  data_tree_frame$V1, 
+                                  data_tree_frame$V2,
+                            sep = "/")
+
+h <- as.Node(data_tree_frame)
+print(h, Mapping = as.character("V3"))
+```
+
+## Alternative Approach of Data Tree
+
+
+```{r datatree2, echo=FALSE}
+
+Index_Set <- c("year","month","week","day","hour","hh")
+
+nC2_results <- combn(Index_Set,2)
+
+# Making time indices
+
+### renaming variables
+#make the column which contains date as a variable too
+    Data_wt_index <- function(data, index1,index2) #choose index1 and index2 from nc2_Results
+    {
+    Units_Data_m <- data %>%
+    mutate(
+      #Primary time units
+      month = month(`Timestamp UTC`, label = FALSE, abbr = TRUE), 
+      year_month = month(`Timestamp UTC`, label = FALSE, abbr = TRUE),
+      year =  year(`Timestamp UTC`),
+      min_proxy  = minute(`Timestamp UTC`)/15,
+      week = week(`Timestamp UTC`),
+      hour =  hour(`Timestamp UTC`),
+      Hlfhour = (hour)*2 + if_else(min_proxy %in% c(0,1),1,2),
+      day = day(`Timestamp UTC`),
+      
+      
+      # Week of the month and week of the year
+  
+      
+      # This adjustment needs to be done in order to get the correct week number otherwise if you have the 7th day of month on a Monday you will get 1 instead of 2, for example.
+      
+      month_week = ceiling((day(`Timestamp UTC`) + first_day_of_month_wday(`Timestamp UTC`) - 1) / 7),
+      year_week = week(`Timestamp UTC`),
+      
+      # day of the week, day of the month and day of the year
+      
+      week_day = wday(`Timestamp UTC`, label=FALSE, abbr=TRUE,
+                 week_start=1), 
+      month_day = day(`Timestamp UTC`),
+      year_day = yday(`Timestamp UTC`),
+      
+      # Hour of the day, week, month and year
+      
+      week_hour = (week_day - 1) * 24 + hour, 
+      month_hour = (month_day - 1) * 24 + hour,
+      year_hour = (year_day - 1) * 24 + hour,
+      day_hour =  hour,
+      
+      # Half-Hour of the day, week, month and year
+      
+      week_hh = (week_day - 1) * 48 + Hlfhour, 
+      month_hh = (month_day - 1) * 48 + Hlfhour,
+      year_hh = (year_day - 1) * 48 + Hlfhour,
+      day_hh =  Hlfhour,
+      hour_hh = if_else(week_day %in% c(0,1),1,2),
+      Weekend=if_else(min_proxy %in% c(6,7),1,0))
+    
+     f <- paste0(index1,"_",index2)
+     d <- Units_Data_m %>% group_by(.data[[index1]]) %>% mutate(count_d = length(unique(.data[[f]])))
+     e <-ifelse(identical(max(d$count_d) ,min(d$count_d)),"Regular","Irregular")
+    return(e)
+    
+    }
+
+    
+data_tree_mat_i <- matrix(0,ncol(nC2_results),3)
+
+for(i in 1:ncol(nC2_results))
+{ 
+  index1 = nC2_results[1,i]
+  index2 = nC2_results[2,i]
+  r_index      = Data_wt_index(Units_Data, index1,index2)
+  #data_tree_row <- 
+  data_tree_mat_i[i,] =  c(index1,index2,r_index)
+}
+
+data_tree_frame <- as.data.frame(data_tree_mat_i)
+
+
+data_tree_frame$pathString <- paste("Time_Granularities", 
+                                  data_tree_frame$V1, 
+                                  data_tree_frame$V2,
+                            sep = "/")
+
+h <- as.Node(data_tree_frame)
+print(h, Mapping = "V3")
+```
+
+##Another Implementation on the data tree on VIC data
+
+
+
+
+
+
+<!-- This chapter contains a summary of the context in which your research is set.  -->
+
+<!-- Imagine you are writing for your fellow PhD students. Topics that are well-known to them do not have to be included here. But things that they may not know about should be included. -->
+
+<!-- Resist the temptation to discuss everything you've read in the last few years. And you are not writing a textbook either. This chapter is meant to provide the background necessary to understand the material in subsequent chapters. Stick to that. -->
+
+<!-- You will need to organize the literature review around themes, and within each theme provide a story explaining the development of ideas to date. In each theme, you should get to the point where your ideas will fit in. But leave your ideas to later chapters. This way it is clear what has been done beforehand, and what new contributions you are making to the research field. -->
+
+<!-- All citations should be done using markdown notation as shown below. This way, your bibliography will be compiled automatically and correctly. -->
+
+
+<!-- ## Exponential Smoothing {#sec:expsmooth} -->
+
+<!-- Exponential smoothing was originally developed in the late 1950s [@Brown59;@Brown63;@Holt57;@Winters60]. Because of their computational simplicity and interpretability, they became widely used in practice. -->
+
+<!-- Empirical studies by @MH79 and @Metal82 found little difference in forecast accuracy between exponential smoothing and ARIMA models. This made the family of exponential smoothing procedures an attractive proposition [see @CKOS01]. -->
+
+<!-- The methods were less popular in academic circles until  @OKS97 introduced a state space formulation of some of the methods, which was extended in @HKSG02 to cover the full range of exponential smoothing methods. -->
 
 
