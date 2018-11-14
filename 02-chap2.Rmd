@@ -12,7 +12,7 @@ Breaking time into years, months, weeks, days and so on in a hierarchical manner
 
 The number of time granularities increases as the frequency of data increases. And with increasing frequency, it is difficult to comprehend how all those time granularities relate to data.
 
-## Exhaustive number of time granularities for a fixed bottom granularity
+### Exhaustive number of time granularities for a fixed bottom granularity
 
 If the bottom granularity is 30 minutes, the following set of time graularities can be defined.
  
@@ -37,7 +37,7 @@ and so on, then the exhaustive number of time granularities will be (i-1)* i/2 w
 
 It is to be noted that the parent and bottom granularity can start and end at any level, for example, start at month and go till seconds. But if they can be arranged in an order like this, the total number of time granularities can be computed.
 
-## So what works and what doesn't?
+### So what works and what doesn't?
 
 Does that mean we can plot all the 16c2 combinations if we want to draw two granularities or 16c3 combinations if we want to draw all the three granularities in a graph.
 
@@ -55,7 +55,7 @@ library(tsibble)
 library(data.tree)
 VIC <- read.csv("VIC2015/Data/demand_VIC.csv")
 VIC$Date <- as.Date(VIC$Date,origin = "1899-12-30")
-range(VIC$Date)
+#range(VIC$Date)
 
 # Week starts from Monday
 VIC <- VIC %>%
@@ -68,7 +68,7 @@ VIC <- VIC %>%
          dom = day(Date),
          bom = (dom - 1) * 48 + Period)
 
-VIC %>% ggplot(aes(x=as.factor(bow),y=OperationalLessIndustrial)) + geom_jitter() + scale_x_discrete(breaks=seq(1, 366, 60)) + facet_wrap(~Period)+ theme(legend.position = "bottom") + theme(legend.position = "bottom",strip.text = element_text(size = 8, margin = margin())) + xlab("Half-Hour of the Week") + ylab("Energy_Consumption(Kwh)")
+VIC %>% filter(year!=2015) %>%  ggplot(aes(x=as.factor(bow),y=OperationalLessIndustrial)) + geom_jitter() + scale_x_discrete(breaks=seq(1, 366, 60)) + facet_wrap(~Period)+ theme(legend.position = "bottom") + theme(legend.position = "bottom",strip.text = element_text(size = 8, margin = margin())) + xlab("Half-Hour of the Week") + ylab("Energy_Consumption(Kwh)")
 ```
 
 When we are drawing half-hour of the week and half-hour of the day, for example, first half-hour of the day can never correspond to second half-hour of the week or vice versa. Hence, they should not be put in the same graph for the purpose of comparison as the points in each facet would correspond to different half-hour of the week and can't be compared across facets.
@@ -216,7 +216,7 @@ h <- as.Node(data_tree_frame)
 print(h, Mapping = as.character("V3"))
 ```
 
-## Alternative Approach of Data Tree
+### Alternative Approach of Data Tree
 
 
 ```{r datatree2, echo=FALSE}
@@ -306,11 +306,98 @@ h <- as.Node(data_tree_frame)
 print(h, Mapping = "V3")
 ```
 
-##Another Implementation on the data tree on VIC data
+### Another Implementation of the data tree on Victorian State Electricity demand data
 
 
 
+```{r datatree3, echo=FALSE}
 
+Index_Set <- c("year","month","week","day","hour","hh")
+
+nC2_results <- combn(Index_Set,2)
+
+# Making time indices
+
+### renaming variables
+#make the column which contains date as a variable too
+    Data_wt_index <- function(data, index1,index2) #choose index1 and index2 from nc2_Results
+    {
+    Units_Data_m <- data %>%
+    mutate(
+      #Primary time units
+      month = month(Date, label = FALSE, abbr = TRUE), 
+      year_month = month(Date, label = FALSE, abbr = TRUE),
+      year =  year(Date),
+      week = week(Date),
+      hour =  ceiling((Period)/4),
+      Hlfhour = (hour)*2 + ceiling(Period/2),
+      day = day(Date),
+      
+      
+      # Week of the month and week of the year
+  
+      
+      # This adjustment needs to be done in order to get the correct week number otherwise if you have the 7th day of month on a Monday you will get 1 instead of 2, for example.
+      
+      month_week = ceiling((day(Date) + first_day_of_month_wday(Date) - 1) / 7),
+      year_week = week(Date),
+      
+      # day of the week, day of the month and day of the year
+      
+      week_day = wday(Date, label=FALSE, abbr=TRUE,
+                 week_start=1), 
+      month_day = day(Date),
+      year_day = yday(Date),
+      
+      # Hour of the day, week, month and year
+      
+      week_hour = (week_day - 1) * 24 + hour, 
+      month_hour = (month_day - 1) * 24 + hour,
+      year_hour = (year_day - 1) * 24 + hour,
+      day_hour =  hour,
+      
+      # Half-Hour of the day, week, month and year
+      
+      week_hh = (week_day - 1) * 48 + Hlfhour, 
+      month_hh = (month_day - 1) * 48 + Hlfhour,
+      year_hh = (year_day - 1) * 48 + Hlfhour,
+      day_hh =  Hlfhour,
+      hour_hh = if_else(week_day %in% c(0,1),1,2))
+    
+     f <- paste0(index1,"_",index2)
+     d <- Units_Data_m %>% group_by(.data[[index1]]) %>% mutate(count_d = length(unique(.data[[f]])))
+     e <-ifelse(identical(max(d$count_d) ,min(d$count_d)),"Regular","Irregular")
+    return(e)
+    
+    }
+
+    
+data_tree_mat_i <- matrix(0,ncol(nC2_results),3)
+
+for(i in 1:ncol(nC2_results))
+{ 
+  index1 = nC2_results[1,i]
+  index2 = nC2_results[2,i]
+  r_index      = Data_wt_index(VIC, index1,index2)
+  #data_tree_row <- 
+  data_tree_mat_i[i,] =  c(index1,index2,r_index)
+}
+
+data_tree_frame <- as.data.frame(data_tree_mat_i)
+
+
+data_tree_frame$pathString <- paste("Time_Granularities", 
+                                  data_tree_frame$V1, 
+                                  data_tree_frame$V2,
+                            sep = "/")
+
+h <- as.Node(data_tree_frame)
+print(h, Mapping = "V3")
+```
+
+## Visualizing probability distributions of time granularities
+
+### geom_hdr - Plotting Highest Density Regions
 
 
 <!-- This chapter contains a summary of the context in which your research is set.  -->
